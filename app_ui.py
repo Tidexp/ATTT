@@ -30,7 +30,7 @@ class App:
         self.root.geometry("520x520")
 
         self.aes = AES_Scratch()
-        self.key = b"NHOM15_BMTT_2026"  # 16 bytes (AES-128)
+        self.key = b"NHOM15_BMTT_2026"  # 16 bytes (AES-128). Có thể đổi sang 24/32 bytes cho AES-192/256.
 
         self.mode_var = tk.StringVar(value="ECB")
         self.key_format_var = tk.StringVar(value="text")
@@ -44,20 +44,20 @@ class App:
         tk.Label(mode_frame, text="Chế độ:").pack(side=tk.LEFT, padx=(0, 6))
         tk.OptionMenu(mode_frame, self.mode_var, "ECB", "CBC", "CTR", "GCM").pack(side=tk.LEFT)
 
-        key_frame = tk.LabelFrame(root, text="Nhập Key (AES-128 = 16 bytes)")
+        key_frame = tk.LabelFrame(root, text="Nhập Key (AES-128/192/256 = 16/24/32 bytes)")
         key_frame.pack(fill="x", padx=10, pady=8)
 
         fmt_frame = tk.Frame(key_frame)
         fmt_frame.pack(anchor="w", padx=10, pady=(6, 2))
         tk.Radiobutton(
             fmt_frame,
-            text="Text (UTF-8, đúng 16 ký tự ASCII là dễ nhất)",
+            text="Text (UTF-8; 16/24/32 ký tự ASCII là dễ nhất)",
             variable=self.key_format_var,
             value="text",
         ).pack(anchor="w")
         tk.Radiobutton(
             fmt_frame,
-            text="Hex (32 ký tự hex = 16 bytes)",
+            text="Hex (32/48/64 ký tự hex = 16/24/32 bytes)",
             variable=self.key_format_var,
             value="hex",
         ).pack(anchor="w")
@@ -125,12 +125,16 @@ class App:
             messagebox.showerror("Lỗi", f"Key không hợp lệ: {e}")
             return
 
-        if len(key_bytes) != 16:
-            messagebox.showerror("Lỗi", f"Key phải đúng 16 bytes cho AES-128. Hiện tại: {len(key_bytes)} bytes.")
+        if len(key_bytes) not in (16, 24, 32):
+            messagebox.showerror(
+                "Lỗi",
+                f"Key phải dài 16/24/32 bytes (AES-128/192/256). Hiện tại: {len(key_bytes)} bytes.",
+            )
             return
 
         self.key = key_bytes
-        self.write_log(f"[KEY] Đã cập nhật key ({len(self.key)} bytes).")
+        bits = len(self.key) * 8
+        self.write_log(f"[KEY] Đã cập nhật key ({len(self.key)} bytes = AES-{bits}).")
 
     def random_iv(self):
         iv = random_iv_bytes()

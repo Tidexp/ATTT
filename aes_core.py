@@ -22,6 +22,7 @@ class AES_Scratch:
         for i, v in enumerate(self.sbox):
             self.inv_sbox[v] = i
 
+        # đủ cho AES-128/192/256 key expansion (thực tế cần <= 8 giá trị cho AES-192/256)
         self.rcon = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36]
 
     def sub_bytes(self, state):
@@ -78,33 +79,76 @@ class AES_Scratch:
             state[i] ^= round_key[i]
 
     def expand_key(self, master_key):
-        key_list = list(master_key)
-        for i in range(16, 176, 4):
-            temp = key_list[i-4:i]
-            if i % 16 == 0:
-                temp = [self.sbox[b] for b in temp[1:] + temp[:1]]
-                temp[0] ^= self.rcon[i//16 - 1]
-            for j in range(4):
-                key_list.append(key_list[i-16+j] ^ temp[j])
-        return key_list
+        """
+        Key expansion for AES-128/192/256.
+        Returns expanded key bytes as list[int] with length 16 * (Nr + 1).
+        """
+        if not isinstance(master_key, (bytes, bytearray)):
+            raise TypeError("master_key phải là bytes/bytearray.")
+        key_len = len(master_key)
+        if key_len not in (16, 24, 32):
+            raise ValueError("Key phải dài 16/24/32 bytes (AES-128/192/256).")
+
+        nb = 4  # AES block words
+        nk = key_len // 4  # key words: 4/6/8
+        nr = {4: 10, 6: 12, 8: 14}[nk]
+        total_words = nb * (nr + 1)
+
+        # w: list of 4-byte words
+        w: list[list[int]] = []
+        key_bytes = list(master_key)
+        for i in range(nk):
+            w.append(key_bytes[4 * i : 4 * (i + 1)])
+
+        def _rot_word(word: list[int]) -> list[int]:
+            return word[1:] + word[:1]
+
+        def _sub_word(word: list[int]) -> list[int]:
+            return [self.sbox[b] for b in word]
+
+        i = nk
+        while i < total_words:
+            temp = w[i - 1].copy()
+            if i % nk == 0:
+                temp = _sub_word(_rot_word(temp))
+                rc_index = (i // nk) - 1
+                if rc_index >= len(self.rcon):
+                    raise ValueError("Thiếu Rcon cho key expansion.")
+                temp[0] ^= self.rcon[rc_index]
+            elif nk == 8 and (i % nk) == 4:
+                # AES-256 extra SubWord step
+                temp = _sub_word(temp)
+            w.append([w[i - nk][j] ^ temp[j] for j in range(4)])
+            i += 1
+
+        expanded = [b for word in w for b in word]
+        return expanded
 
     def encrypt_block(self, block, expanded_key):
         state = list(block)
+        nr = (len(expanded_key) // 16) - 1
+        if nr not in (10, 12, 14):
+            raise ValueError("Expanded key không hợp lệ.")
+
         self.add_round_key(state, expanded_key[0:16])
-        for i in range(1, 10):
+        for i in range(1, nr):
             self.sub_bytes(state)
             self.shift_rows(state)
             self.mix_columns(state)
             self.add_round_key(state, expanded_key[i*16:(i+1)*16])
         self.sub_bytes(state)
         self.shift_rows(state)
-        self.add_round_key(state, expanded_key[160:176])
+        self.add_round_key(state, expanded_key[nr * 16 : (nr + 1) * 16])
         return bytes(state)
 
     def decrypt_block(self, block, expanded_key):
         state = list(block)
-        self.add_round_key(state, expanded_key[160:176])
-        for round_num in range(9, 0, -1):
+        nr = (len(expanded_key) // 16) - 1
+        if nr not in (10, 12, 14):
+            raise ValueError("Expanded key không hợp lệ.")
+
+        self.add_round_key(state, expanded_key[nr * 16 : (nr + 1) * 16])
+        for round_num in range(nr - 1, 0, -1):
             self.inv_shift_rows(state)
             self.inv_sub_bytes(state)
             self.add_round_key(state, expanded_key[round_num*16:(round_num+1)*16])
