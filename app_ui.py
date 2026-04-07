@@ -36,6 +36,7 @@ class App:
         self.key_format_var = tk.StringVar(value="text")
         self.iv_hex_var = tk.StringVar(value="")
         self.nonce_hex_var = tk.StringVar(value="")
+        self.key_text_var = tk.StringVar(value="")
 
         tk.Label(root, text="MÃ HÓA AES FILE (SCRATCH)", font=("Arial", 12, "bold")).pack(pady=10)
 
@@ -65,9 +66,15 @@ class App:
         entry_frame = tk.Frame(key_frame)
         entry_frame.pack(fill="x", padx=10, pady=(2, 8))
         tk.Label(entry_frame, text="Key:").pack(side=tk.LEFT)
-        self.key_entry = tk.Entry(entry_frame)
+        self.key_entry = tk.Entry(entry_frame, textvariable=self.key_text_var)
         self.key_entry.pack(side=tk.LEFT, fill="x", expand=True, padx=6)
-        self.key_entry.insert(0, self.key.decode("utf-8", errors="ignore"))
+
+        key_status_frame = tk.Frame(key_frame)
+        key_status_frame.pack(fill="x", padx=10, pady=(0, 6))
+        self.key_len_label = tk.Label(key_status_frame, text="", fg="#555", anchor="w", justify="left")
+        self.key_len_label.pack(fill="x")
+
+        self.key_text_var.set(self.key.decode("utf-8", errors="ignore"))
         tk.Button(entry_frame, text="Áp dụng", command=self.apply_key).pack(side=tk.LEFT)
 
         self.iv_frame = tk.LabelFrame(root, text="IV (CBC)")
@@ -104,7 +111,56 @@ class App:
         self.log.pack(pady=10)
 
         self.mode_var.trace_add("write", lambda *_: self.update_mode_ui())
+        self.key_text_var.trace_add("write", lambda *_: self.update_key_length_label())
+        self.key_format_var.trace_add("write", lambda *_: self.update_key_length_label())
         self.update_mode_ui()
+        self.update_key_length_label()
+
+    def update_key_length_label(self):
+        raw = self.key_text_var.get() or ""
+        char_count = len(raw)
+        ok_color = "#2e7d32"  # green
+        bad_color = "#c62828"  # red
+        neutral_color = "#555"
+
+        if self.key_format_var.get() == "hex":
+            cleaned = raw.replace(" ", "")
+            is_even = (len(cleaned) % 2) == 0
+            is_hex = True
+            if cleaned:
+                try:
+                    bytes.fromhex(cleaned)
+                except ValueError:
+                    is_hex = False
+            byte_count = len(cleaned) // 2
+            is_valid = is_hex and is_even and (byte_count in (16, 24, 32))
+
+            if not cleaned:
+                self.key_len_label.config(
+                    text="0 ký tự (0 bytes) — cần 32/48/64 ký tự hex (= 16/24/32 bytes)",
+                    fg=neutral_color,
+                )
+                return
+
+            self.key_len_label.config(
+                text=f"{char_count} ký tự ({byte_count} bytes) — cần 32/48/64 ký tự hex",
+                fg=(ok_color if is_valid else bad_color),
+            )
+        else:
+            byte_count = len(raw.encode("utf-8"))
+            is_valid = byte_count in (16, 24, 32)
+
+            if not raw:
+                self.key_len_label.config(
+                    text="0 ký tự (0 bytes) — cần 16/24/32 bytes (AES-128/192/256)",
+                    fg=neutral_color,
+                )
+                return
+
+            self.key_len_label.config(
+                text=f"{char_count} ký tự ({byte_count} bytes UTF-8) — cần 16/24/32 bytes",
+                fg=(ok_color if is_valid else bad_color),
+            )
 
     def write_log(self, msg: str):
         self.log.insert(tk.END, msg + "\n")
